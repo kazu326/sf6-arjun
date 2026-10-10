@@ -180,6 +180,11 @@ input[type=range]{width:100%;accent-color:var(--orange)}
 .bar .n{text-align:right;color:var(--mute);font-variant-numeric:tabular-nums}
 .status{font-size:12px;color:var(--mute);margin-top:12px;display:flex;gap:6px;align-items:flex-start}
 .status.local{color:var(--safe)}
+.authbox{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);font-size:13px;font-weight:700;min-width:0}
+.authbox img{width:28px;height:28px;border-radius:50%;background:var(--panel2)}
+.authbox span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn.discord{background:#5865f2;border-color:#5865f2;color:#fff;width:100%;padding:9px 12px}
+.btn.discord:hover{filter:brightness(1.1)}
 .thread{padding:0;min-width:0}
 .agendas{display:flex;gap:0;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:thin}
 .agendas button{flex:0 0 auto;background:transparent;border:0;border-bottom:2px solid transparent;padding:12px 14px;color:var(--mute);cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap}
@@ -538,7 +543,7 @@ footer a{color:var(--mute)}
   <div class="wrap">
     <div class="plate neon">
       <h2>議論スレ & ランク予想</h2>
-      <p>配信前の予想をここに残して、10/13以降に答え合わせしよう。</p>
+      <p>配信前の予想をここに残して、10/13以降に答え合わせしよう。投票と書き込みはこのページを開いた全員で共有されます。</p>
     </div>
     <div class="disc">
       <div class="cabinet vote">
@@ -551,6 +556,7 @@ footer a{color:var(--mute)}
           <button class="rank" data-r="C" aria-pressed="false">C<small>厳しい</small></button>
         </div>
         <div class="bars" id="voteBars"></div>
+        <div class="authbox" id="authBox" hidden></div>
         <div class="status" id="dbStatus"><i class="fa-solid fa-circle-notch fa-spin"></i><span>共有ストアに接続中…</span></div>
       </div>
       <div class="cabinet thread">
@@ -599,6 +605,7 @@ footer a{color:var(--mute)}
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1379,6 +1386,10 @@ bindSeg($('#cardFilter'), f => { $$('.card').forEach(c => c.hidden = f !== 'all'
   let cur = 'parry', side = 'pro';
   let posts = [], votes = {}, myVote = null, uid = null;
   let db = null, user = null, mode = 'connecting', readOnly = false;
+  let sb = null;
+  const SUPA_URL = 'https://zhgbxepowryxujootxgn.supabase.co';
+  const SUPA_KEY = 'sb_publishable_AZ6r2TPJUY-HCZaKTRkF7w_oVBc0p9Q';
+  const isWebDeploy = /(^|\.)vercel\.app$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
 
   // tabs
   const tabs = $('#agendaTabs');
@@ -1438,14 +1449,14 @@ bindSeg($('#cardFilter'), f => { $$('.card').forEach(c => c.hidden = f !== 'all'
     if (cur !== a.id) return;
     el.innerHTML = '';
     for (const p of list) {
-      const pr = profs[p.author];
+      const pr = mode === 'supa' ? { name: p.name, avatarUrl: p.avatar } : profs[p.author];
       const row = document.createElement('div'); row.className = 'post';
       const img = document.createElement('img'); img.alt = '';
       if (pr && pr.avatarUrl) img.src = pr.avatarUrl;
       const body = document.createElement('div');
       const meta = document.createElement('div'); meta.className = 'meta';
       const who = document.createElement('span'); who.className = 'who';
-      who.textContent = mode === 'shared' ? ((pr && pr.name) || 'だれか') + (p.author === uid ? '（自分）' : '') : '自分（この端末）';
+      who.textContent = mode === 'local' ? '自分（この端末）' : ((pr && pr.name) || 'だれか') + (p.author === uid ? '（自分）' : '');
       const sd = document.createElement('span'); sd.className = 'side ' + (SIDES[p.side] ? p.side : 'fun'); sd.textContent = SIDES[p.side] || 'ネタ';
       const tm = document.createElement('span'); tm.textContent = relTime(p.at);
       meta.append(who, sd, tm);
@@ -1465,6 +1476,11 @@ bindSeg($('#cardFilter'), f => { $$('.card').forEach(c => c.hidden = f !== 'all'
 
   async function removePost(p, btn) {
     if (btn.dataset.armed !== '1') { btn.dataset.armed = '1'; btn.textContent = 'もう一度押すと削除'; setTimeout(() => { btn.dataset.armed = ''; btn.textContent = '削除'; }, 3000); return; }
+    if (mode === 'supa') {
+      const { error } = await sb.from('posts').delete().eq('id', p.id);
+      if (error) showErr('削除できませんでした。時間をおいて試してください。'); else reloadSupa();
+      return;
+    }
     if (mode === 'shared') { try { await db.doc('posts/' + p.id).delete(); } catch (e) { showErr('削除できませんでした。時間をおいて試してください。'); } }
     else { posts = posts.filter(x => x.id !== p.id); LS.set('posts', posts); renderThread(); }
   }
@@ -1473,11 +1489,15 @@ bindSeg($('#cardFilter'), f => { $$('.card').forEach(c => c.hidden = f !== 'all'
     e.preventDefault(); showErr('');
     const text = ta.value.trim();
     if (!text) { showErr('本文を入力してください。'); return; }
-    if (readOnly) { showErr('このページでは閲覧のみ可能です。書き込むには編集できる権限が必要です。'); return; }
+    if (readOnly) { showErr(mode === 'supa' ? 'Discordでログインすると書き込めます。' : 'このページでは閲覧のみ可能です。書き込むには編集できる権限が必要です。'); return; }
     const doc = { agenda: cur, text: text.slice(0, 280), side, at: Date.now() };
     const btn = $('#postBtn'); btn.disabled = true;
     try {
-      if (mode === 'shared') {
+      if (mode === 'supa') {
+        const { error } = await sb.from('posts').insert({ user_id: uid, agenda: doc.agenda, side: doc.side, body: doc.text });
+        if (error) throw { code: /rate_limited/.test(error.message) ? 'rate_limited' : 'supa' };
+        reloadSupa();
+      } else if (mode === 'shared') {
         if (!uid) { showErr('サインインしていないため書き込めません。'); return; }
         await db.collection('posts').add({ ...doc, author: uid });
       } else {
@@ -1486,6 +1506,7 @@ bindSeg($('#cardFilter'), f => { $$('.card').forEach(c => c.hidden = f !== 'all'
       ta.value = ''; ta.dispatchEvent(new Event('input'));
     } catch (err) {
       if (err && err.code === 'invalid_argument') { readOnly = true; showErr('書き込み権限がないため投稿できませんでした。閲覧のみになります。'); renderVotes(); }
+      else if (err && err.code === 'rate_limited') showErr('連投は1分に5件までです。少し待ってから投稿してください。');
       else if (err && err.code === 'quota_exceeded') showErr('書き込み数の上限に達しました。古い書き込みを削除してください。');
       else showErr('投稿できませんでした。時間をおいてもう一度試してください。');
     } finally { btn.disabled = false; }
@@ -1495,6 +1516,12 @@ bindSeg($('#cardFilter'), f => { $$('.card').forEach(c => c.hidden = f !== 'all'
     const b = e.target.closest('.rank'); if (!b || readOnly) return;
     const r = b.dataset.r; if (r === myVote) return;
     const prev = myVote; myVote = r;
+    if (mode === 'supa') {
+      votes[uid] = r; renderVotes();
+      const { error } = await sb.from('votes').upsert({ user_id: uid, rank: r });
+      if (error) { myVote = prev; if (prev) votes[uid] = prev; else delete votes[uid]; renderVotes(); }
+      return;
+    }
     if (mode === 'shared') {
       if (!uid) { myVote = prev; return; }
       votes[uid] = r; renderVotes();
@@ -1511,9 +1538,71 @@ bindSeg($('#cardFilter'), f => { $$('.card').forEach(c => c.hidden = f !== 'all'
     renderVotes(); renderThread();
   }
 
+  // ---- Vercel deploy: Supabase + Discord login ----
+  let reloadTimer = 0;
+  async function reloadSupa() {
+    const [v, p] = await Promise.all([
+      sb.from('votes').select('user_id,rank'),
+      sb.from('posts').select('id,user_id,agenda,side,body,created_at,profiles(display_name,avatar_url)').order('created_at', { ascending: false }).limit(400)
+    ]);
+    if (v.error || p.error) { setStatus('local', '<i class="fa-solid fa-triangle-exclamation"></i><span>投票とスレを読み込めませんでした。再読み込みしてください。</span>'); return; }
+    votes = {}; v.data.forEach(x => { votes[x.user_id] = x.rank; });
+    myVote = uid ? (votes[uid] || null) : null;
+    posts = p.data.map(x => ({ id: x.id, author: x.user_id, agenda: x.agenda, side: x.side, text: x.body, at: Date.parse(x.created_at),
+      name: x.profiles && x.profiles.display_name, avatar: x.profiles && x.profiles.avatar_url }));
+    renderVotes(); renderThread();
+  }
+  const queueReload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(reloadSupa, 250); };
+  function renderAuth(session) {
+    const box = $('#authBox'); box.hidden = false; box.innerHTML = '';
+    if (session) {
+      const m = session.user.user_metadata || {};
+      const img = document.createElement('img'); img.alt = ''; img.referrerPolicy = 'no-referrer'; if (m.avatar_url) img.src = m.avatar_url;
+      const name = document.createElement('span'); name.textContent = (m.custom_claims && m.custom_claims.global_name) || m.full_name || m.name || 'ログイン中';
+      const out = document.createElement('button'); out.className = 'btn'; out.type = 'button'; out.textContent = 'ログアウト';
+      out.addEventListener('click', () => sb.auth.signOut());
+      box.append(img, name, out);
+    } else {
+      const b = document.createElement('button'); b.className = 'btn discord'; b.type = 'button';
+      b.innerHTML = '<i class="fa-brands fa-discord"></i> Discordでログインして参加';
+      b.addEventListener('click', async () => {
+        const { error } = await sb.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo: location.origin + location.pathname } });
+        if (error) setStatus('local', '<i class="fa-solid fa-triangle-exclamation"></i><span>Discordログインを開始できませんでした。</span>');
+      });
+      box.append(b);
+    }
+  }
+  async function applySession(session) {
+    uid = session ? session.user.id : null;
+    readOnly = !uid;
+    renderAuth(session);
+    setStatus('shared', uid
+      ? '<i class="fa-brands fa-discord"></i><span>ログイン中。投票と書き込みは全員に共有され、Discordにも通知されます</span>'
+      : '<i class="fa-solid fa-eye"></i><span>見るだけならログイン不要。投票と書き込みはDiscordでログインするとできます</span>');
+    if (/[?&](code|error)=/.test(location.search)) { history.replaceState(null, '', location.pathname + '#talk'); $('#talk').scrollIntoView(); }
+    await reloadSupa();
+  }
+  function bootSupa() {
+    mode = 'supa'; readOnly = true;
+    sb = supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { flowType: 'pkce', persistSession: true, detectSessionInUrl: true } });
+    // keep supabase calls out of the auth callback itself
+    sb.auth.onAuthStateChange((ev, session) => {
+      if (ev === 'INITIAL_SESSION' || ev === 'SIGNED_IN' || ev === 'SIGNED_OUT') setTimeout(() => applySession(session), 0);
+    });
+    sb.channel('arjun-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, queueReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, queueReload)
+      .subscribe();
+  }
+
   renderVotes(); renderThread();
 
   (async () => {
+    if (isWebDeploy) {
+      if (window.supabase && window.supabase.createClient) bootSupa();
+      else goLocal('共有サーバーのライブラリを読み込めませんでした。');
+      return;
+    }
     if (!window.claude || typeof window.claude.use !== 'function') { goLocal('共有ストアが使えない環境で開いています。'); return; }
     try { [db, user] = await Promise.all([claude.use('db'), claude.use('user')]); } catch (e) { db = null; }
     if (!db) { goLocal('サインインしていないか、共有ストアに接続できませんでした。'); return; }
