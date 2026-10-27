@@ -174,8 +174,11 @@
   .frames { margin: 28px 0 32px; padding: 28px 24px 22px; background: var(--slab); border-left: 4px solid var(--lime) }
   .frames-title { margin: 0 0 4px; font: 400 18px/1.5 var(--f-jp-display) }
   .frames-sub { margin: 0 0 24px; font-size: 13px; color: var(--mute) }
-  .frow { display: grid; grid-template-columns: 9.5em 1fr; align-items: center; gap: 14px; margin-bottom: 14px }
-  .frow-name { font-weight: 700; font-size: 14px }
+  /* 図はすべて「名前の列（--lab）＋バーの列」の同じグリッドに載せ、当たり判定の枠と見出しもバーの列の % で置く。
+     こうすると画面幅が変わっても、枠とバーの位置関係がずれない */
+  .fgrid { --lab: 9.5em; --gap: 14px; position: relative; display: grid; grid-template-columns: var(--lab) 1fr; column-gap: var(--gap); row-gap: 14px; align-items: center }
+  .frow-name { font-weight: 700; font-size: 14px; line-height: 1.35 }
+  .frow-name span { display: inline-block }
   .track { position: relative; height: 40px }
   .seg {
     position: absolute; top: 0; bottom: 0; display: grid; place-items: center;
@@ -186,17 +189,20 @@
   .seg.start { background: var(--slab-hi); box-shadow: inset 0 0 0 1px var(--line) }
   .seg.act { background: var(--cyan); color: var(--ink) }
   .seg.rec { background: #3a3a40; color: var(--mute) }
-  .hitzone { position: relative; height: 0 }
-  .hitzone-band {
-    position: absolute; left: calc(9.5em + 14px); right: 0; top: -108px; height: 112px; pointer-events: none;
-  }
-  .hitzone-band i {
+  /* バーの列だけを覆う透明な層。2本のバーの行にまたがる */
+  .hitzone { grid-column: 2; grid-row: 1 / 3; align-self: stretch; position: relative; margin: -6px 0; pointer-events: none }
+  .hitzone i {
     position: absolute; top: 0; bottom: 0; left: 45.83%; width: 13.34%;
     border: 2px dashed var(--lime); background: rgba(215, 255, 30, .10); box-shadow: 0 0 22px var(--lime-glow);
-    transform: skewX(var(--skew));
+    /* 傾きの軸を「こちらの技」のバーの中心（下端から 6px＋バー高さ40pxの半分）に置き、その行の持続とぴったり重ねる */
+    transform: skewX(var(--skew)); transform-origin: 50% calc(100% - 26px);
   }
-  .hit-label { margin: 6px 0 0 calc(9.5em + 14px); padding-left: 41%; font: 900 14px/1.4 var(--f-body); color: var(--lime); text-shadow: 0 0 14px var(--lime-glow) }
-  .time-axis { margin: 16px 0 0 calc(9.5em + 14px); display: flex; align-items: center; gap: 8px; color: var(--mute); font: 400 13px/1 var(--f-display); letter-spacing: .2em }
+  .hit-row { grid-column: 2; position: relative; height: 22px; margin-top: -4px }
+  .hit-label {
+    position: absolute; left: 52.5%; top: 0; transform: translateX(-50%); margin: 0; white-space: nowrap;
+    font: 900 14px/1.4 var(--f-body); color: var(--lime); text-shadow: 0 0 14px var(--lime-glow);
+  }
+  .time-axis { grid-column: 2; display: flex; align-items: center; gap: 8px; margin-top: 2px; color: var(--mute); font: 400 13px/1 var(--f-display); letter-spacing: .2em }
   .time-axis::before { content: ""; flex: 1; height: 2px; background: linear-gradient(90deg, var(--line), var(--mute)) }
 
   /* ループ */
@@ -292,12 +298,11 @@
     .tag { top: 18px; right: 12px }
     .hero .wrap { padding-block: 64px 48px }
     section { padding-block: 56px }
-    .frows-wrap { --lab: 0px }
-    .frow { grid-template-columns: 1fr; gap: 6px }
-    .hitzone-band { left: 0; top: -102px; height: 104px }
-    .hitzone-band i { display: none }
-    .hit-label, .time-axis { margin-left: 0 }
-    .hit-label { padding-left: 0 }
+    .frames { padding-inline: 16px }
+    .fgrid { --lab: 4.6em; --gap: 10px }
+    .frow-name { font-size: 12px }
+    .seg { font-size: 11.5px }
+    .hit-label { font-size: 13px }
     .step-head { grid-template-columns: 1fr }
     .step-num { grid-row: auto }
   }
@@ -389,25 +394,23 @@
       <figure class="frames" aria-label="空振った技の硬直に、こちらの持続を当てるのが差し返し">
         <p class="frames-title">空振った技の硬直に、こちらの持続を当てるのが差し返し</p>
         <p class="frames-sub">長さはイメージです。実際のフレーム数は技ごとに違います。</p>
-        <div class="frow">
-          <span class="frow-name">相手の技（空振り）</span>
-          <div class="track">
+        <div class="fgrid">
+          <span class="frow-name" style="grid-row:1"><span>相手の技</span><span>（空振り）</span></span>
+          <div class="track" style="grid-column:2;grid-row:1">
             <span class="seg start" style="left:0;width:20.83%"><span>発生</span></span>
             <span class="seg act" style="left:20.83%;width:16.67%"><span>持続</span></span>
             <span class="seg rec" style="left:37.5%;width:62.5%"><span>硬直</span></span>
           </div>
-        </div>
-        <div class="frow">
-          <span class="frow-name">こちらの技</span>
-          <div class="track">
+          <span class="frow-name" style="grid-row:2"><span>こちらの技</span></span>
+          <div class="track" style="grid-column:2;grid-row:2">
             <span class="seg start" style="left:27.08%;width:18.75%"><span>発生</span></span>
             <span class="seg act" style="left:45.83%;width:13.34%"><span>持続</span></span>
             <span class="seg rec" style="left:59.17%;width:28.33%"><span>硬直</span></span>
           </div>
+          <div class="hitzone"><i></i></div>
+          <div class="hit-row" style="grid-row:3"><p class="hit-label">▲ 差し返しが当たるところ</p></div>
+          <div class="time-axis" style="grid-row:4">TIME</div>
         </div>
-        <div class="hitzone"><div class="hitzone-band"><i></i></div></div>
-        <p class="hit-label">▲ 差し返しが当たるところ</p>
-        <div class="time-axis">TIME</div>
       </figure>
 
       <div class="measure">
