@@ -279,7 +279,9 @@
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 18px }
   .cards figure { margin: 0 }
   .cards video { display: block; width: 100%; max-width: 100%; height: auto; aspect-ratio: 4 / 5; background: var(--slab); transition: transform .2s, box-shadow .2s }
-  .cards figure:hover video { transform: translateY(-4px) rotate(-.6deg); box-shadow: 0 0 0 2px var(--cyan), 0 0 30px var(--cyan-glow) }
+  /* PCはマウスを乗せたとき、スマホ（ホバーできない端末）はカード全体が画面に入ったとき（.lit）に同じ演出 */
+  @media (hover: hover) { .cards figure:hover video { transform: translateY(-4px) rotate(-.6deg); box-shadow: 0 0 0 2px var(--cyan), 0 0 30px var(--cyan-glow) } }
+  .cards figure.lit video { transform: translateY(-4px) rotate(-.6deg); box-shadow: 0 0 0 2px var(--cyan), 0 0 30px var(--cyan-glow) }
   .cards figcaption { margin-top: 8px; font-size: 13px; color: var(--mute) }
 
   footer { padding-block: 40px 56px; font-size: 13px; color: var(--mute) }
@@ -583,21 +585,21 @@
       </div>
       <div class="cards">
         <figure>
-          <video autoplay muted loop playsinline preload="metadata" poster="img/SASHI_01.jpg" width="800" height="1000" aria-label="差し合いカード1 振らせて差し返す">
+          <video muted loop playsinline preload="metadata" poster="img/SASHI_01.jpg" width="800" height="1000" aria-label="差し合いカード1 振らせて差し返す">
             <source src="video/SASHI_01.webm" type='video/webm; codecs="vp9"'>
             <source src="video/SASHI_01.mp4" type="video/mp4">
           </video>
           <figcaption>カード1　振らせて差し返す</figcaption>
         </figure>
         <figure>
-          <video autoplay muted loop playsinline preload="metadata" poster="img/SASHI_02.jpg" width="800" height="1000" aria-label="差し合いカード2 踏み込みに置く">
+          <video muted loop playsinline preload="metadata" poster="img/SASHI_02.jpg" width="800" height="1000" aria-label="差し合いカード2 踏み込みに置く">
             <source src="video/SASHI_02.webm" type='video/webm; codecs="vp9"'>
             <source src="video/SASHI_02.mp4" type="video/mp4">
           </video>
           <figcaption>カード2　踏み込みに置く</figcaption>
         </figure>
         <figure>
-          <video autoplay muted loop playsinline preload="metadata" poster="img/SASHI_03.jpg" width="800" height="1000" aria-label="差し合いカード3 スカされたら振らせる側へ">
+          <video muted loop playsinline preload="metadata" poster="img/SASHI_03.jpg" width="800" height="1000" aria-label="差し合いカード3 スカされたら振らせる側へ">
             <source src="video/SASHI_03.webm" type='video/webm; codecs="vp9"'>
             <source src="video/SASHI_03.mp4" type="video/mp4">
           </video>
@@ -638,10 +640,32 @@
     document.querySelectorAll('main section').forEach(s => io.observe(s));
   })();
 
-  // 動きを減らす設定の人には自動再生を止め、再生ボタンを出す
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    document.querySelectorAll('.cards video').forEach(v => { v.removeAttribute('autoplay'); v.pause(); v.controls = true; });
-  }
+  // カード動画：画面に半分以上入ったものだけを頭から再生し、外れたら止める。
+  // ホバーできない端末（スマホ）では、カード全体が画面に入ったときにホバーと同じ演出（.lit）を付ける。
+  // 動きを減らす設定の人には自動再生せず、再生ボタンを出す
+  (() => {
+    const videos = [...document.querySelectorAll('.cards video')];
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const touch = matchMedia('(hover: none)').matches;
+    if (reduce) videos.forEach(v => { v.controls = true; });
+    if (!('IntersectionObserver' in window)) {
+      if (!reduce) videos.forEach(v => v.play().catch(() => {}));
+      return;
+    }
+    const io = new IntersectionObserver(entries => {
+      for (const e of entries) {
+        const v = e.target, r = e.isIntersecting ? e.intersectionRatio : 0;
+        if (!reduce) {
+          if (r >= 0.5 && v.paused) { v.currentTime = 0; v.play().catch(() => {}); }
+          else if (r < 0.5 && !v.paused) v.pause();
+        }
+        // 傾けると外接矩形が少し変わるので、点灯（95%）と消灯（80%）の境目をずらしてチラつきを防ぐ
+        if (touch && r >= 0.95) v.parentElement.classList.add('lit');
+        else if (touch && r < 0.8) v.parentElement.classList.remove('lit');
+      }
+    }, { threshold: [0, 0.5, 0.8, 0.95, 1] });
+    videos.forEach(v => io.observe(v));
+  })();
 </script>
 </body>
 </html>
